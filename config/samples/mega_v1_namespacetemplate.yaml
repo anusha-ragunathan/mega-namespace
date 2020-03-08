@@ -1,0 +1,7 @@
+apiVersion: mega.aragunathan.com/v1
+kind: NamespaceTemplate
+metadata:
+  name: namespacetemplate-sample
+spec:
+  # Add fields here
+  foo: bar

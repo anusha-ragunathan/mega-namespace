@@ -1,0 +1,7 @@
+domain: aragunathan.com
+repo: github.com/anusha-ragunathan/mega-namespace
+resources:
+- group: mega
+  kind: NamespaceTemplate
+  version: v1
+version: "2"
