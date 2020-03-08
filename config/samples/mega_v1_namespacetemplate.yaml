@@ -3,5 +3,41 @@ kind: NamespaceTemplate
 metadata:
   name: namespacetemplate-sample
 spec:
-  # Add fields here
-  foo: bar
+  precreatehook:
+    command: ["/bin/sh", "-c", "echo Hello from the preCreate handler > /usr/share/message"]
+  postcreatehook:
+    command: ["/bin/sh", "-c", "echo Hello from the postCreate handler > /usr/share/message"]
+  options:
+    my-awesome-key1: my-awesome-value1
+    my-awesome-key2: my-awesome-value2
+    my-awesome-key3: my-awesome-value3
+    my-awesome-key4: my-awesome-value4
+  addresources:
+    podspec:
+      containers:
+      - name: web
+        image: nginx
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 80
+    secretspec:
+      type: Opaque
+      data:
+        username: YWRtaW4=
+        password: MWYyZDFlMmU2N2Rm
+    limitrangespec:
+      spec:
+        limits:
+        - max:
+            cpu: "800m"
+            memory: "1Gi"
+          min:
+            cpu: "100m"
+            memory: "99Mi"
+          default:
+            cpu: "700m"
+            memory: "900Mi"
+          defaultRequest:
+            cpu: "110m"
+            memory: "111Mi"
+          type: Container
