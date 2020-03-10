@@ -19,11 +19,14 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os/exec"
+	"time"
 
 	"github.com/go-logr/logr"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -34,8 +37,9 @@ import (
 // NamespaceTemplateReconciler reconciles a NamespaceTemplate object
 type NamespaceTemplateReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log               logr.Logger
+	Scheme            *runtime.Scheme
+	PostCreateHookMap map[string]bool
 }
 
 // creates additional resources. All additional resources listed in nstObj.Spec.AdditionalResources
@@ -101,10 +105,44 @@ func (r *NamespaceTemplateReconciler) createadditionalresources(ctx context.Cont
 	return nil
 }
 
+// executePostCreateHook runs the postCreate lifecycle hooks and returns the duration it takes.
+// add the "-n", namespace.Name suffix here.
+func executePostCreateHook(namespace v1.Namespace, gracePeriod int64, nst megav1.NamespaceTemplate) int64 {
+	fmt.Printf("Running postCreate hook for namespace %q\n", namespace.Name)
+
+	nst.Spec.PostCreateHook.Command = append(nst.Spec.PostCreateHook.Command, "-n", namespace.Name)
+
+	start := metav1.Now()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer utilruntime.HandleCrash()
+
+		fmt.Printf("running the postCreateHook %v in a go routine\n", nst.Spec.PostCreateHook.Command)
+		n := len(nst.Spec.PostCreateHook.Command)
+
+		cmd := exec.Command(nst.Spec.PostCreateHook.Command[0], nst.Spec.PostCreateHook.Command[1:n]...)
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("executePostCreateHook failed to run the hook due to %v\n", err)
+		}
+
+	}()
+
+	select {
+	case <-time.After(time.Duration(gracePeriod) * time.Second):
+		fmt.Printf("postCreate hook for namespace %q did not complete in %d seconds\n", namespace.Name, gracePeriod)
+	case <-done:
+		fmt.Printf("postCreate hook for namespace %q completed\n", namespace.Name)
+	}
+
+	return int64(metav1.Now().Sub(start.Time).Seconds())
+}
+
 // +kubebuilder:rbac:groups=mega.aragunathan.com,resources=namespacetemplates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=mega.aragunathan.com,resources=namespacetemplates/status,verbs=get;update;patch
 
 func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, error) {
+
 	ctx := context.Background()
 	log := r.Log.WithValues("namespacetemplate", req.NamespacedName)
 
@@ -137,6 +175,20 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 		fmt.Printf("creating additionalresources for namespace %v\n", ns.ObjectMeta.Name)
 		if err := r.createadditionalresources(ctx, ns.ObjectMeta.Name, nstObj); err != nil {
 			return ctrl.Result{}, err
+		}
+	}
+
+	// 4. For all namespaces matching this nst, run the postcreatehook for the nst
+	// Check r.PostCreateHookRan to run this just once.
+	for _, ns := range namespaces.Items {
+		fmt.Printf("running postCreateHooks for %v\n", ns.Name)
+		_, ok := r.PostCreateHookMap[ns.Name]
+		if !ok {
+			fmt.Printf("no entry for %v in PostCreateHookMap\n", ns.Name)
+			executePostCreateHook(ns, int64(time.Second*1), nstObj)
+			r.PostCreateHookMap[ns.Name] = true
+		} else {
+			fmt.Printf("there's an entry for %v in PostCreateHookMap\n", ns.Name)
 		}
 	}
 

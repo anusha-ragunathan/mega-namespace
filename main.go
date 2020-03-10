@@ -67,9 +67,10 @@ func main() {
 	}
 
 	if err = (&controllers.NamespaceTemplateReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("NamespaceTemplate"),
-		Scheme: mgr.GetScheme(),
+		Client:            mgr.GetClient(),
+		Log:               ctrl.Log.WithName("controllers").WithName("NamespaceTemplate"),
+		Scheme:            mgr.GetScheme(),
+		PostCreateHookMap: make(map[string]bool),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NamespaceTemplate")
 		os.Exit(1)

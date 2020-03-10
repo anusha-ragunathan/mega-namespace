@@ -3,10 +3,8 @@ kind: NamespaceTemplate
 metadata:
   name: namespacetemplate-sample
 spec:
-  precreatehook:
-    command: ["/bin/sh", "-c", "echo Hello from the preCreate handler > /usr/share/message"]
   postcreatehook:
-    command: ["/bin/sh", "-c", "echo Hello from the postCreate handler > /usr/share/message"]
+    command: ["kubectl", "create", "serviceaccount", "nginx-serviceaccount"]
   options:
     my-awesome-key1: my-awesome-value1
     my-awesome-key2: my-awesome-value2
