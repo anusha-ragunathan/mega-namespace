@@ -45,9 +45,9 @@ type ExecAction struct {
 // Another drawback is only one instance can be provisioned per resource type.
 // XXX: Fix this later.
 type AdditionalResources struct {
-	PodSpec        v1.PodSpec    `json:"podspec"`
-	SecretSpec     v1.Secret     `json:"secretspec"`
-	LimitRangeSpec v1.LimitRange `json:"limitrangespec"`
+	Pod        v1.Pod        `json:"pod"`
+	Secret     v1.Secret     `json:"secret"`
+	LimitRange v1.LimitRange `json:"limitrange"`
 }
 
 // NamespaceTemplateSpec defines the desired state of NamespaceTemplate
