@@ -6,10 +6,8 @@ spec:
   postcreatehook:
     command: ["kubectl", "create", "serviceaccount", "nginx-serviceaccount"]
   options:
-    my-awesome-key1: my-awesome-value1
-    my-awesome-key2: my-awesome-value2
-    my-awesome-key3: my-awesome-value3
-    my-awesome-key4: my-awesome-value4
+    container-registry: index.docker.io
+    kubernetes-platform: eks
   addresources:
     pod:
       metadata:

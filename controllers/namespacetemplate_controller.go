@@ -44,18 +44,20 @@ type NamespaceTemplateReconciler struct {
 
 // creates additional resources. All additional resources listed in nstObj.Spec.AdditionalResources
 // are created in the ns namespace
-func (r *NamespaceTemplateReconciler) createadditionalresources(ctx context.Context, nsName string, nstObj megav1.NamespaceTemplate) error {
+func (r *NamespaceTemplateReconciler) createadditionalresources(ctx context.Context,
+	nsName string, nstObj megav1.NamespaceTemplate, options map[string]string) error {
 
 	// provision pods
 	var p v1.Pod
 	key := types.NamespacedName{Namespace: nsName, Name: nstObj.Spec.AddResources.Pod.Name}
 	if err := r.Get(ctx, key, &p); err != nil {
-		fmt.Printf("unable to get pod info due to %v\n", err)
+		fmt.Printf("pod not found, creating new\n")
 		// assume that the error is "pod doesnt exist". in theory, err can be due to other issues as well
 		pod := &v1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: nsName,
 				Name:      nstObj.Spec.AddResources.Pod.Name,
+				Labels:    options,
 			},
 			Spec: nstObj.Spec.AddResources.Pod.Spec,
 		}
@@ -69,11 +71,12 @@ func (r *NamespaceTemplateReconciler) createadditionalresources(ctx context.Cont
 	var s v1.Secret
 	key = types.NamespacedName{Namespace: nsName, Name: nstObj.Spec.AddResources.Secret.Name}
 	if err := r.Get(ctx, key, &s); err != nil {
-		fmt.Printf("unable to get secret info due to %v\n", err)
+		fmt.Printf("secret not found, creating new\n")
 		secret := &v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: nsName,
 				Name:      nstObj.Spec.AddResources.Secret.Name,
+				Labels:    options,
 			},
 			Data:       nstObj.Spec.AddResources.Secret.Data,
 			StringData: nstObj.Spec.AddResources.Secret.StringData,
@@ -88,11 +91,12 @@ func (r *NamespaceTemplateReconciler) createadditionalresources(ctx context.Cont
 	var lr v1.LimitRange
 	key = types.NamespacedName{Namespace: nsName, Name: nstObj.Spec.AddResources.LimitRange.Name}
 	if err := r.Get(ctx, key, &lr); err != nil {
-		fmt.Printf("unable to get LimitRange info due to %v\n", err)
+		fmt.Printf("limitrange not found, creating new\n")
 		limitrange := &v1.LimitRange{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: nsName,
 				Name:      nstObj.Spec.AddResources.LimitRange.Name,
+				Labels:    options,
 			},
 			Spec: nstObj.Spec.AddResources.LimitRange.Spec,
 		}
@@ -170,15 +174,7 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 		fmt.Printf("namespace matching this request: %v\n", ns.ObjectMeta.Name)
 	}
 
-	// 3. For all namespaces matching this nst, create additional resources
-	for _, ns := range namespaces.Items {
-		fmt.Printf("creating additionalresources for namespace %v\n", ns.ObjectMeta.Name)
-		if err := r.createadditionalresources(ctx, ns.ObjectMeta.Name, nstObj); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	// 4. For all namespaces matching this nst, run the postcreatehook for the nst
+	// 3. For all namespaces matching this nst, run the postcreatehook for the nst
 	// Check r.PostCreateHookRan to run this just once.
 	for _, ns := range namespaces.Items {
 		fmt.Printf("running postCreateHooks for %v\n", ns.Name)
@@ -189,6 +185,15 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 			r.PostCreateHookMap[ns.Name] = true
 		} else {
 			fmt.Printf("there's an entry for %v in PostCreateHookMap\n", ns.Name)
+		}
+	}
+
+	// 4. For all namespaces matching this nst, create additional resources.
+	// Use nstObj.Spec.Options as a labels for these newly creates resources.
+	for _, ns := range namespaces.Items {
+		fmt.Printf("creating additionalresources for namespace %v\n", ns.ObjectMeta.Name)
+		if err := r.createadditionalresources(ctx, ns.ObjectMeta.Name, nstObj, nstObj.Spec.Options); err != nil {
+			return ctrl.Result{}, err
 		}
 	}
 
