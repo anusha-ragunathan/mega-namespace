@@ -2,48 +2,46 @@ This is a proof-of-concept repo for a custom kubernetes controller that manages 
 
 
 
-Install the CRD
-----------------
+# Install the CRD
 
-# install the crd
+Install the crd
 `make install` 
 
-# verify that the CRD (NamespaceTemplate) got installed
+Verify that the CRD (NamespaceTemplate) got installed
 ```
 $ kubectl get crd/namespacetemplates.mega.aragunathan.com
 NAME                                      CREATED AT
 namespacetemplates.mega.aragunathan.com   2020-03-10T20:16:49Z
 ```
 
-# start the controller in a terminal
+Start the controller in a terminal
 `make run`
 
-Create objects for the NamespaceTemplate CRD
----------------------------------------------
-# Use another terminal for kubectl client commands
+# Create objects for the NamespaceTemplate CRD
 
-# note that there are no objects for NamespaceTemplate yet
+(Use another terminal for kubectl client commands)
+
+Note that there are no objects for NamespaceTemplate yet
 ```
 $ kubectl get namespacetemplates.mega.aragunathan.com
 No resources found in default namespace.
 ```
 
-# create an object for the NamespaceTemplate
+Create an object for the NamespaceTemplate
 ```
 $ kubectl apply -f config/samples/mega_v1_namespacetemplate.yaml 
 namespacetemplate.mega.aragunathan.com/namespacetemplate-sample created
 ```
 
-Create namespace using a NamespaceTemplate object
--------------------------------------------------
-# create a namespace that uses the NamespaceTemplate. This is a label for the namespace.
+# Create namespace using a NamespaceTemplate object
+
+Create a namespace that uses the NamespaceTemplate. This is a label for the namespace.
 ```
 $ kubectl apply -f config/samples/namespace.yaml
 namespace/namespace-sample created
 ```
 
-# notice how the controller provisions additionalresources, postStartHooks, etc that are 
-# specified in the NamespaceTemplate
+Notice how the controller provisions additionalresources, postStartHooks, etc that are specified in the NamespaceTemplate
 ```
 $ kubectl get pods,secrets,limitrange -n namespace-sample
 NAME           READY   STATUS    RESTARTS   AGE
@@ -58,13 +56,13 @@ NAME                         CREATED AT
 limitrange/test-limitrange   2020-03-10T21:44:08Z
 ```
 
-# create another namespace under the same NamespaceTemplate
+Create another namespace under the same NamespaceTemplate
 ```
 $ kubectl apply -f config/samples/namespace2.yaml
 namespace/namespace-sample2 created
 ```   
 
-# again, how notice the resources mentioned in the NamespaceTemplate get provisioned in the namespace
+Again, how notice the resources mentioned in the NamespaceTemplate get provisioned in the namespace
 ```
 $ kubectl get pods,secrets,limitrange -n namespace-sample2
 NAME           READY   STATUS    RESTARTS   AGE
@@ -79,10 +77,9 @@ NAME                         CREATED AT
 limitrange/test-limitrange   2020-03-10T22:12:11Z
 ```
 
-Update the NamespaceTemplate object and observe the Renciliation loop update the namespaces
----------------------------------------------------------------------------------------------
-# Update the NST obj and see if the pod spec is updated in both namespaces
-# change pod container port from 8080 to 80
+# Update the NamespaceTemplate object and observe the Renciliation loop update the namespaces
+
+Update the NST obj and see if the pod spec is updated in both namespaces. Change pod container port from 8080 to 80
 ```
 $ kubectl apply -f config/samples/mega_v1_namespacetemplate.yaml 
 namespacetemplate.mega.aragunathan.com/namespacetemplate-sample updated

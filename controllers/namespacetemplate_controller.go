@@ -57,7 +57,6 @@ func computeHash(nstObj megav1.NamespaceTemplate) uint64 {
 // delete old pod
 // create pod is not necessary, since createadditionalresources will
 // provision the new pod if it doesnt exist
-
 func (r *NamespaceTemplateReconciler) updatePod(ctx context.Context,
 	nsName string, nstObj megav1.NamespaceTemplate, options map[string]string) error {
 
