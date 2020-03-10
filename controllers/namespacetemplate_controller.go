@@ -144,12 +144,6 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 	return ctrl.Result{Requeue: true}, nil
 }
 
-var (
-	jobOwnerKey = ".metadata.controller"
-	// in my case, i can use the label
-	//apiGVStr    = batch.GroupVersion.String()
-)
-
 func (r *NamespaceTemplateReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&megav1.NamespaceTemplate{}).Complete(r)
