@@ -71,6 +71,7 @@ func main() {
 		Log:               ctrl.Log.WithName("controllers").WithName("NamespaceTemplate"),
 		Scheme:            mgr.GetScheme(),
 		PostCreateHookMap: make(map[string]bool),
+		PrevNSTMap:        make(map[string]uint64),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "NamespaceTemplate")
 		os.Exit(1)

@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	megav1 "github.com/anusha-ragunathan/mega-namespace/api/v1"
+	"github.com/mitchellh/hashstructure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -39,7 +40,38 @@ type NamespaceTemplateReconciler struct {
 	client.Client
 	Log               logr.Logger
 	Scheme            *runtime.Scheme
-	PostCreateHookMap map[string]bool
+	PostCreateHookMap map[string]bool   // namespace => bool indicating whether hook ran
+	PrevNSTMap        map[string]uint64 // namespacetemplate => checksum
+}
+
+// Compute hash of the incoming NamespaceTemplate object and return it
+func computeHash(nstObj megav1.NamespaceTemplate) uint64 {
+	hash, err := hashstructure.Hash(nstObj, nil)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("computeHash: %d\n", hash)
+	return hash
+}
+
+// delete old pod
+// create pod is not necessary, since createadditionalresources will
+// provision the new pod if it doesnt exist
+
+func (r *NamespaceTemplateReconciler) updatePod(ctx context.Context,
+	nsName string, nstObj megav1.NamespaceTemplate, options map[string]string) error {
+
+	oldpod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: nsName,
+			Name:      nstObj.Spec.AddResources.Pod.Name,
+		},
+	}
+	if err := r.Delete(ctx, oldpod); err != nil {
+		fmt.Printf("delete pod failed due to %v\n", err)
+		return err
+	}
+	return nil
 }
 
 // creates additional resources. All additional resources listed in nstObj.Spec.AdditionalResources
@@ -157,24 +189,43 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	actualObj := nstObj.DeepCopy()
-	fmt.Printf("Options %v\n", actualObj.Spec.Options)
-	fmt.Printf("PrecreateHook: %v\n", actualObj.Spec.PreCreateHook)
-	fmt.Printf("PostcreateHook %v\n", actualObj.Spec.PostCreateHook)
-	fmt.Printf("AdditionalResources %+v\n", actualObj.Spec.AddResources)
-
-	// 2. List all namespaces that belong to this namespacetemplate
+	// 2. List/Identify all namespaces that belong to this namespacetemplate
 	var namespaces v1.NamespaceList
 	if err := r.List(ctx, &namespaces, client.InNamespace(req.Namespace), client.MatchingLabels{"namespacetemplate": req.Name}); err != nil {
 		log.Error(err, "unable to list namespaces matching the nst in this request")
 		return ctrl.Result{}, err
 	}
-
 	for _, ns := range namespaces.Items {
 		fmt.Printf("namespace matching this request: %v\n", ns.ObjectMeta.Name)
 	}
 
-	// 3. For all namespaces matching this nst, run the postcreatehook for the nst
+	// 3. Reconcile NamespaceTemplate change
+	// Check if this nstObj has changed since last time we saw it.
+	// If it did, then identify all child namespaces and update the pods in it
+	currCheckSum := computeHash(nstObj)
+	fmt.Println(r.PrevNSTMap)
+
+	prevCheckSum, ok := r.PrevNSTMap[nstObj.ObjectMeta.Name]
+	if ok {
+		if currCheckSum != prevCheckSum {
+			fmt.Printf("Reconcile: change detected in %v\n", nstObj.ObjectMeta.Name)
+			r.PrevNSTMap[nstObj.ObjectMeta.Name] = currCheckSum
+			// XXX: for now, implement backend to take care of *only* pod changes.
+			// if update detected, consider it to be for the pod.
+			// do this for all child namespaces
+			for _, ns := range namespaces.Items {
+				fmt.Printf("namespace matching this request: %v\n", ns.ObjectMeta.Name)
+				r.updatePod(ctx, ns.ObjectMeta.Name, nstObj, nstObj.Spec.Options)
+			}
+		} else {
+			fmt.Printf("Reconcile: no change detected in %v\n", nstObj.ObjectMeta.Name)
+		}
+	} else {
+		fmt.Printf("Reconcile: obj doesnt exist in r.PrevNSTMap. adding it for the first time\n")
+		r.PrevNSTMap[nstObj.ObjectMeta.Name] = currCheckSum
+	}
+
+	// 4. For all namespaces matching this nst, run the postcreatehook for the nst
 	// Check r.PostCreateHookRan to run this just once.
 	for _, ns := range namespaces.Items {
 		fmt.Printf("running postCreateHooks for %v\n", ns.Name)
@@ -188,7 +239,7 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 		}
 	}
 
-	// 4. For all namespaces matching this nst, create additional resources.
+	// 5. For all namespaces matching this nst, create additional resources.
 	// Use nstObj.Spec.Options as a labels for these newly creates resources.
 	for _, ns := range namespaces.Items {
 		fmt.Printf("creating additionalresources for namespace %v\n", ns.ObjectMeta.Name)
