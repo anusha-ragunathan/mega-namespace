@@ -1,5 +1,16 @@
-This is a proof-of-concept repo for a custom kubernetes controller that manages a new CRD called NamespaceTemplate.
+This is a proof-of-concept repo for a custom kubernetes controller that manages a new CRD called NamespaceTemplate (NST). NSTs are a powerful way to extend the core Namespace objects’ capabilities. 
+- Allows infra teams to create different tiers of NamespaceTemplates
+- Allows dev teams to review the catalogue of the different tiers available and choose one for their namespace. 
+- Reduces manual/JIRA-based back-and-forth between infra and dev teams.
+- Automating the namespace request process, thereby effectively using infra team’s time and effort.
+- Desired state of the namespace stored in GitHub as a yaml template.
 
+A namespace associates itself with a NamespaceTemplate using labels, i.e by adding "namespacetemplate" : "nst-gold" in its definition.
+
+An NST defines attributes such as 
+- lifecyclehooks to be run during the lifecycle of a namespace. eg. postcreathooks will be run *after* a namespace is created.
+- additional resources to be provisioned and reconciled after a namespace has been provisioned.
+- options to be passed to resources provisioned in the namespace.
 
 
 # Install the CRD
