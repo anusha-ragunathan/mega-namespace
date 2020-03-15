@@ -88,7 +88,7 @@ NAME                         CREATED AT
 limitrange/test-limitrange   2020-03-10T22:12:11Z
 ```
 
-# Update the NamespaceTemplate object and observe the Renciliation loop update the namespaces
+# Update the NamespaceTemplate object and observe the Reconciliation loop update the namespaces
 
 Update the NST obj and see if the pod spec is updated in both namespaces. Change pod container port from 8080 to 80
 ```
