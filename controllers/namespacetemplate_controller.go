@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -42,6 +43,8 @@ type NamespaceTemplateReconciler struct {
 	Scheme            *runtime.Scheme
 	PostCreateHookMap map[string]bool   // namespace => bool indicating whether hook ran
 	PrevNSTMap        map[string]uint64 // namespacetemplate => checksum
+	Lock              sync.RWMutex      // protects PostCreateHookMap
+	Lock2             sync.RWMutex      // protects PrevNSTMap
 }
 
 // Compute hash of the incoming NamespaceTemplate object and return it
@@ -81,10 +84,11 @@ func (r *NamespaceTemplateReconciler) createadditionalresources(ctx context.Cont
 	// provision pods
 	var p v1.Pod
 	key := types.NamespacedName{Namespace: nsName, Name: nstObj.Spec.AddResources.Pod.Name}
+
 	if err := r.Get(ctx, key, &p); err != nil {
 		fmt.Printf("pod not found, creating new\n")
 		// assume that the error is "pod doesnt exist". in theory, err can be due to other issues as well
-		pod := &v1.Pod{
+		newPod := v1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: nsName,
 				Name:      nstObj.Spec.AddResources.Pod.Name,
@@ -92,7 +96,9 @@ func (r *NamespaceTemplateReconciler) createadditionalresources(ctx context.Cont
 			},
 			Spec: nstObj.Spec.AddResources.Pod.Spec,
 		}
-		if err := r.Create(ctx, pod); err != nil {
+		fmt.Printf("dumping pod spec in namespace %s: %+v\n", nsName, newPod.Spec)
+
+		if err := r.Create(ctx, &newPod); err != nil {
 			fmt.Printf("unable to create pod due to %v\n", err)
 			return err
 		}
@@ -182,11 +188,14 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 	log := r.Log.WithValues("namespacetemplate", req.NamespacedName)
 
 	// 1. Load NamespaceTemplate obj by name
-	var nstObj megav1.NamespaceTemplate
-	if err := r.Get(ctx, req.NamespacedName, &nstObj); err != nil {
+	var origObj megav1.NamespaceTemplate
+	if err := r.Get(ctx, req.NamespacedName, &origObj); err != nil {
 		log.Error(err, "unable to fetch NamespaceTemplate")
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	var nstObj *megav1.NamespaceTemplate
+	nstObj = origObj.DeepCopy()
 
 	// 2. List/Identify all namespaces that belong to this namespacetemplate
 	var namespaces v1.NamespaceList
@@ -201,7 +210,9 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 	// 3. Reconcile NamespaceTemplate change
 	// Check if this nstObj has changed since last time we saw it.
 	// If it did, then identify all child namespaces and update the pods in it
-	currCheckSum := computeHash(nstObj)
+	currCheckSum := computeHash(*nstObj)
+
+	r.Lock2.Lock()
 	fmt.Println(r.PrevNSTMap)
 
 	prevCheckSum, ok := r.PrevNSTMap[nstObj.ObjectMeta.Name]
@@ -214,7 +225,7 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 			// do this for all child namespaces
 			for _, ns := range namespaces.Items {
 				fmt.Printf("namespace matching this request: %v\n", ns.ObjectMeta.Name)
-				r.updatePod(ctx, ns.ObjectMeta.Name, nstObj, nstObj.Spec.Options)
+				r.updatePod(ctx, ns.ObjectMeta.Name, *nstObj, nstObj.Spec.Options)
 			}
 		} else {
 			fmt.Printf("Reconcile: no change detected in %v\n", nstObj.ObjectMeta.Name)
@@ -223,26 +234,33 @@ func (r *NamespaceTemplateReconciler) Reconcile(req ctrl.Request) (ctrl.Result, 
 		fmt.Printf("Reconcile: obj doesnt exist in r.PrevNSTMap. adding it for the first time\n")
 		r.PrevNSTMap[nstObj.ObjectMeta.Name] = currCheckSum
 	}
+	r.Lock2.Unlock()
+	// hack: add a 5 second delay so that delete propagates and we can create a new pod
+	// ideally we would have a channel to signal the delete completion and wait on it
+	// in the pod creation.
+	time.Sleep(5 * time.Second)
 
 	// 4. For all namespaces matching this nst, run the postcreatehook for the nst
 	// Check r.PostCreateHookRan to run this just once.
 	for _, ns := range namespaces.Items {
 		fmt.Printf("running postCreateHooks for %v\n", ns.Name)
+		r.Lock.Lock()
 		_, ok := r.PostCreateHookMap[ns.Name]
 		if !ok {
 			fmt.Printf("no entry for %v in PostCreateHookMap\n", ns.Name)
-			executePostCreateHook(ns, int64(time.Second*1), nstObj)
+			executePostCreateHook(ns, int64(time.Second*1), *nstObj)
 			r.PostCreateHookMap[ns.Name] = true
 		} else {
 			fmt.Printf("there's an entry for %v in PostCreateHookMap\n", ns.Name)
 		}
+		r.Lock.Unlock()
 	}
 
 	// 5. For all namespaces matching this nst, create additional resources.
 	// Use nstObj.Spec.Options as a labels for these newly creates resources.
 	for _, ns := range namespaces.Items {
 		fmt.Printf("creating additionalresources for namespace %v\n", ns.ObjectMeta.Name)
-		if err := r.createadditionalresources(ctx, ns.ObjectMeta.Name, nstObj, nstObj.Spec.Options); err != nil {
+		if err := r.createadditionalresources(ctx, ns.ObjectMeta.Name, *nstObj, nstObj.Spec.Options); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
